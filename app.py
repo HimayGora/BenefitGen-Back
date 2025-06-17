@@ -13,11 +13,25 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- Helper Functions ---
 def load_keys():
-    try:
-        with open('keys.txt', 'r') as f:
-            return {line.strip() for line in f if line.strip()}
-    except FileNotFoundError:
-        return set()
+    """
+    Loads allowed keys (UUIDs) from a comma-separated string in an environment variable.
+    Keys should be provided as a comma-separated string in the ALLOWED_KEYS_CSV environment variable.
+    """
+    print("Attempting to load keys from environment variable...")
+
+    # The delimiter is a comma, as UUIDs don't contain commas
+    KEY_DELIMITER = "," 
+
+    keys_delimited_string = os.getenv("ALLOWED_KEYS_CSV")
+
+    if keys_delimited_string:
+        # Split the string by the comma and create a set of keys
+        keys = {key.strip() for key in keys_delimited_string.split(KEY_DELIMITER) if key.strip()}
+        print(f"Successfully loaded {len(keys)} UUID keys from environment variable.")
+        return keys
+    else:
+        print("WARNING: ALLOWED_KEYS_CSV environment variable not found or is empty. No UUID keys loaded.")
+        return set() # Return an empty set if no keys are provided
 
 def read_prompt_template(filename="landing_prompt.md"):
     """Reads a prompt template from the /prompts directory."""
@@ -50,12 +64,31 @@ app = Flask(__name__)
 valid_keys = load_keys()
 
 # 2. Configuration
-FRONTEND_URL_DEV = "https://mvp-vue-front.onrender.com"
-csp = {'default-src': '\'self\''}
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://mvp-vue-front.onrender.com")
+BACKEND_API_URL = os.getenv("RENDER_EXTERNAL_URL", "https://mvp-flask-api.onrender.com")
+ALLOWED_CORS_ORIGINS = [
+    FRONTEND_BASE_URL,
+    f"{FRONTEND_BASE_URL}/" # Allow with and without trailing slash
+]
+
+csp = {
+    'default-src': [
+        '\'self\'', # Allow resources from the same origin as the Flask app itself
+        'https://fonts.googleapis.com', # If your Flask app serves templates that use Google Fonts
+        'https://fonts.gstatic.com'    # If your Flask app serves templates that use Google Fonts
+    ],
+    
+    'connect-src': [
+        '\'self\'', # Allow API calls to the Flask app's own domain
+        BACKEND_API_URL, # Explicitly allow your own Flask backend URL (redundant if self is backend, but good to be explicit)
+        FRONTEND_BASE_URL # Allow your frontend's domain to be used in connect-src context, though less common for *backend* CSP
+    ],
+    
+}
 
 # 3. Extensions Initialization
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL_DEV}})
-#Talisman(app, content_security_policy=csp)
+Talisman(app, content_security_policy=csp)
 
 
 # 4. API Routes
