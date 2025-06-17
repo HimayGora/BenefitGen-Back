@@ -134,7 +134,7 @@ Get the objective data you need to optimize project performance.  Detailed, empl
 
 *Topic/Context:* Detail 3 key benefits of a new B2B SaaS product for project management. The product helps teams collaborate efficiently and stay on schedule. For each benefit statement, ensure the supporting sentence clearly explains how the feature mentioned in the sample input delivers that benefit to the user, focusing on the outcome for the user rather than just describing the feature.
 
-*Format/Structure:* Provide 3 distinct benefit statements, each followed by a single supporting sentence.
+*Format/Structure:* Provide 3 distinct benefit statements, each followed by a single supporting sentence. Slightly vary the opening of the supporting sentence. Add a very brief, human-centric context or implied questions in each of the supporting sentences.
 
 *Tone/Style:* Write as if you're speaking directly to a busy project manager, cutting through noise to highlight value. Use active voice. Avoid generic marketing superlatives. Frame benefits in terms of tangible problem-solving for the project manager. Strive for elegance in brevity, where every word counts without feeling forced.
 
