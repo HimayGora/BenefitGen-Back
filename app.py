@@ -98,4 +98,4 @@ def generate_content():
 
 # 5. Running the Server
 if __name__ == '__main__':
-    app.run(debug=False, port=5001)
+    app.run(debug=False,host='0.0.0.0', port=5001)
