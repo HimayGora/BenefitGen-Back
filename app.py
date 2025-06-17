@@ -141,7 +141,7 @@ def generate_content():
 
     # 3. Inject the user's input into the master prompt
     # This replaces the placeholder text at the end of the prompt file
-    final_prompt = f"{prompt_template}\n\nSample input:\n[{features}]"
+    final_prompt = prompt_template.replace("[FEATURES_PLACEHOLDER]", features)
     
     # 4. Call the AI
     ai_result = generate_text_with_gemini(final_prompt)
