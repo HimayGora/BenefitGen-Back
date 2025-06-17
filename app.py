@@ -135,20 +135,55 @@ def generate_content():
 
     # 2. Get the features from the frontend request
     data = request.get_json()
-    features = data.get('features')
-    if not features:
+    features_raw = data.get('features') # Get raw input first
+    
+    if not features_raw:
         return jsonify({"error": "Features are a required field."}), 400
 
-    # 3. Inject the user's input into the master prompt
-    # This replaces the placeholder text at the end of the prompt file
-    final_prompt = prompt_template.replace("[FEATURES_PLACEHOLDER]", features)
+    # --- INPUT SANITIZATION ---
+    # Strip whitespace
+    features_sanitized = features_raw.strip()
+
+    # Optional: Limit input length to prevent overly long injection attempts or abuse
+    MAX_FEATURE_INPUT_LENGTH = 100 # Adjust as needed for your use case
+    if len(features_sanitized) > MAX_FEATURE_INPUT_LENGTH:
+        return jsonify({"error": f"Input too long. Please limit to {MAX_FEATURE_INPUT_LENGTH} characters."}), 400
+
+    # Optional: Basic filtering for problematic phrases.
+    # This is not foolproof but can catch simple attempts.
+    # Adjust this list based on what you observe or want to prevent.
+    problematic_phrases = [
+        "ignore previous instructions",
+        "as an ai model",
+        "generate content in json",
+        "disregard all",
+        "output only",
+        "act as a",
+        "you are now",
+        "system prompt"
+    ]
+    for phrase in problematic_phrases:
+        if phrase in features_sanitized.lower(): # Check lowercased to be case-insensitive
+            # Option A: Reject the input
+            return jsonify({"error": "Input contains potentially problematic content. Please rephrase."}), 400
+            # Option B: Neutralize (e.g., replace with empty string or spaces, or escape)
+            # features_sanitized = features_sanitized.lower().replace(phrase, "") # This might change content unexpectedly
+
+    # You might also want to neutralize specific characters if they could break prompt structure,
+    # but for simple text injection into a placeholder, string replacement usually handles this.
+    # For example, if you were using specific delimiters that the user could inject.
+    # If the LLM is correctly constrained by your main prompt, it should treat this as descriptive text.
+    # --- END INPUT SANITIZATION ---
+
+    # 3. Inject the user's sanitized input into the master prompt
+    # Make sure '[FEATURES_PLACEHOLDER]' matches exactly what you put in landing_prompt.md
+    final_prompt = prompt_template.replace("[FEATURES_PLACEHOLDER]", features_sanitized)
     
     # 4. Call the AI
     ai_result = generate_text_with_gemini(final_prompt)
 
     # 5. Return the result
     return jsonify({"generatedText": ai_result}), 200
-
 
 # 5. Running the Server
 if __name__ == '__main__':
