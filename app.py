@@ -50,7 +50,7 @@ app = Flask(__name__)
 valid_keys = load_keys()
 
 # 2. Configuration
-FRONTEND_URL_DEV = "https://mvp-flask-api.onrender.com"
+FRONTEND_URL_DEV = "https://mvp-vue-front.onrender.com/"
 csp = {'default-src': '\'self\''}
 
 # 3. Extensions Initialization
