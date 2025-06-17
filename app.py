@@ -138,6 +138,7 @@ def generate_content():
     features_raw = data.get('features') # Get raw input first
     
     if not features_raw:
+        print("DEBUG: Backend: 'features_raw' is empty. Returning 400.")
         return jsonify({"error": "Features are a required field."}), 400
 
     # --- INPUT SANITIZATION ---
@@ -147,6 +148,7 @@ def generate_content():
     # Optional: Limit input length to prevent overly long injection attempts or abuse
     MAX_FEATURE_INPUT_LENGTH = 100 # Adjust as needed for your use case
     if len(features_sanitized) > MAX_FEATURE_INPUT_LENGTH:
+        print(f"DEBUG: Backend: Input length {len(features_sanitized)} exceeds {MAX_FEATURE_INPUT_LENGTH}. Returning 400.")
         return jsonify({"error": f"Input too long. Please limit to {MAX_FEATURE_INPUT_LENGTH} characters."}), 400
 
     # Optional: Basic filtering for problematic phrases.
@@ -165,6 +167,7 @@ def generate_content():
     for phrase in problematic_phrases:
         if phrase in features_sanitized.lower(): # Check lowercased to be case-insensitive
             # Option A: Reject the input
+            print(f"DEBUG: Backend: Problematic phrase '{phrase}' found. Returning 400.")
             return jsonify({"error": "Input contains potentially problematic content. Please rephrase."}), 400
             # Option B: Neutralize (e.g., replace with empty string or spaces, or escape)
             # features_sanitized = features_sanitized.lower().replace(phrase, "") # This might change content unexpectedly
