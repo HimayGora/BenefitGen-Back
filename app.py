@@ -146,7 +146,7 @@ def generate_content():
     features_sanitized = features_raw.strip()
 
     # Optional: Limit input length to prevent overly long injection attempts or abuse
-    MAX_FEATURE_INPUT_LENGTH = 100 # Adjust as needed for your use case
+    MAX_FEATURE_INPUT_LENGTH = 1000 # Adjust as needed for your use case
     if len(features_sanitized) > MAX_FEATURE_INPUT_LENGTH:
         print(f"DEBUG: Backend: Input length {len(features_sanitized)} exceeds {MAX_FEATURE_INPUT_LENGTH}. Returning 400.")
         return jsonify({"error": f"Input too long. Please limit to {MAX_FEATURE_INPUT_LENGTH} characters."}), 400
