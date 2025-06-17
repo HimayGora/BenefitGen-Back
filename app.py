@@ -71,7 +71,7 @@ def generate_text_with_gemini(prompt_text):
         response = model.generate_content(
             [prompt_text],
             generation_config=genai.types.GenerationConfig(
-                temperature=0.3, # Using the temp from your refined prompt
+                temperature=0.3,
                 max_output_tokens=800 
             )
         )
@@ -85,7 +85,7 @@ app = Flask(__name__)
 valid_keys = load_keys()
 
 # 2. Configuration
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://mvp-vue-front.onrender.com")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://generator.hsgportfolio.com")
 BACKEND_API_URL = os.getenv("RENDER_EXTERNAL_URL", "https://mvp-flask-api.onrender.com")
 ALLOWED_CORS_ORIGINS = [
     FRONTEND_BASE_URL,
