@@ -7,7 +7,7 @@ import google.generativeai as genai
 # --- Configuration & Setup ---
 from dotenv import load_dotenv
 load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -98,4 +98,4 @@ def generate_content():
 
 # 5. Running the Server
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=False, port=5001)
