@@ -22,9 +22,6 @@ app.config['MONGODB_SETTINGS'] = {
 }
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "a_very_secret_key_that_should_be_in_env_for_production")
 
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 
 db = MongoEngine(app)
@@ -113,7 +110,12 @@ BACKEND_API_URL = os.getenv("RENDER_EXTERNAL_URL", "https://mvp-flask-api.onrend
 ALLOWED_CORS_ORIGINS = [FRONTEND_BASE_URL, f"{FRONTEND_BASE_URL}/"]
 csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', BACKEND_API_URL, FRONTEND_BASE_URL], }
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_CORS_ORIGINS}}, supports_credentials=True)
-Talisman(app, content_security_policy=csp)
+Talisman(
+    app,
+    content_security_policy=csp,
+    session_cookie_secure=True,
+    session_cookie_samesite='None'
+)
 
 
 # --- Authentication Routes ---
