@@ -22,6 +22,11 @@ app.config['MONGODB_SETTINGS'] = {
 }
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "a_very_secret_key_that_should_be_in_env_for_production")
 
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+
+
 db = MongoEngine(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
