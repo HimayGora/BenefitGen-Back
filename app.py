@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, redirect, url_for
+from flask import Flask, jsonify, request, redirect, url_for, abort
 from flask_cors import CORS
 from flask_talisman import Talisman
 import os
@@ -64,7 +64,45 @@ def load_user(user_id):
     except User.DoesNotExist:
         return None
 
-# --- Helper Functions (Unchanged) ---
+# --- Helper Functions (UPDATED) ---
+
+# ADDED: List of prompt injection keywords
+PROMPT_INJECTION_KEYWORDS = [
+    "ignore all previous instructions",
+    "ignore the above",
+    "ignore your instructions",
+    "disregard the previous statement",
+    "forget the preceding text",
+    "act as",
+    "pretend to be",
+    "you are a",
+    "developer mode",
+    "dev mode",
+    "system prompt",
+    "your initial instructions",
+    "repeat the text above",
+    "what were your exact instructions",
+    "translate this sentence as",
+    "haha pwned",
+    "render markdown",
+    "execute code",
+    "run python",
+    "do anything now",
+    "DAN prompt"
+]
+
+def check_for_prompt_injection(input_text):
+    """
+    Checks for prompt injection keywords in the input text.
+    Returns True if a keyword is found, False otherwise.
+    """
+    # Convert input to lowercase for case-insensitive matching
+    lower_input = input_text.lower()
+    # Check if any of the keywords are present in the input
+    if any(keyword in lower_input for keyword in PROMPT_INJECTION_KEYWORDS):
+        return True
+    return False
+
 def read_prompt_template(filename="landing_prompt.md"):
     # ... (function code is correct and remains unchanged)
     current_dir = os.path.dirname(__file__)
@@ -183,15 +221,27 @@ def get_login_status():
         return jsonify({"status": "error", "message": "User is not logged in."}), 401
 
 
-# --- Main Application Route ---
+# --- Main Application Route (UPDATED) ---
 @app.route('/api/generate', methods=['POST'])
 @login_required
 def generate_content():
     """
-    Generates content, enforcing state-based usage limits.
+    Generates content, enforcing state-based usage limits and checking for prompt injection.
     """
+    # --- 1. GET AND VALIDATE INPUT ---
+    data = request.get_json()
+    features_raw = data.get('features')
+
+    if not features_raw:
+        return jsonify({"error": "Features are a required field."}), 400
+    
+    # --- 2. PROMPT INJECTION CHECK ---
+    if check_for_prompt_injection(features_raw):
+        # Using abort() is a clean way to stop the request and return an error
+        abort(404, description="Resource not found due to invalid input.")
+
     ## FIXED: Completely new logic for state-based limit checking
-    # --- 1. USAGE LIMIT CHECK (State-based) ---
+    # --- 3. USAGE LIMIT CHECK (State-based) ---
     now = datetime.datetime.utcnow()
     today_day_of_year = now.timetuple().tm_yday
     current_month = now.month
@@ -213,31 +263,25 @@ def generate_content():
     if current_user.monthly_generations >= current_user.monthly_generation_limit:
         return jsonify({"error": "Monthly generation limit reached."}), 429
 
-    # --- 2. READ PROMPT ---
+    # --- 4. READ PROMPT ---
     prompt_template = read_prompt_template("landing_prompt.md")
     if not prompt_template:
         return jsonify({"error": "Could not load prompt template."}), 500
 
-    # --- 3. GET AND SANITIZE FEATURES ---
-    data = request.get_json()
-    features_raw = data.get('features')
-    if not features_raw:
-        return jsonify({"error": "Features are a required field."}), 400
-    
+    # --- 5. SANITIZE AND PREPARE FINAL PROMPT ---
     features_sanitized = features_raw.strip()
-    # (Sanitization code remains the same)
-
-    # --- 4. GENERATE CONTENT ---
     final_prompt = prompt_template.replace("[FEATURES_PLACEHOLDER]", features_sanitized)
+
+    # --- 6. GENERATE CONTENT ---
     ai_result = generate_text_with_gemini(final_prompt)
 
-    # --- 5. INCREMENT COUNTERS on successful generation ---
+    # --- 7. INCREMENT COUNTERS on successful generation ---
     if "An error occurred" not in ai_result:
         current_user.daily_generations += 1
         current_user.monthly_generations += 1
         current_user.save()
 
-    # --- 6. RETURN RESULT ---
+    # --- 8. RETURN RESULT ---
     return jsonify({"generatedText": ai_result}), 200
 
 
