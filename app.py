@@ -7,12 +7,14 @@ from flask_mongoengine import MongoEngine
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
+import stripe
 
 # --- Configuration & Setup ---
 from dotenv import load_dotenv
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 app = Flask(__name__)
@@ -21,7 +23,8 @@ app.config['MONGODB_SETTINGS'] = {
     'host': os.getenv("MONGO_URI", "mongodb://localhost:27017/your_default_db")
 }
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "a_very_secret_key_that_should_be_in_env_for_production")
-
+stripe.api_key = os.getenv("STRIPE_API_KEY") 
+webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 
 db = MongoEngine(app)
@@ -119,7 +122,59 @@ def read_prompt_template(filename="landing_prompt.md"):
     except Exception as e:
         print(f"ERROR: An unexpected error occurred while reading prompt file {prompt_path}: {e}")
         return None
+def handle_checkout_session(session):
+    """
+    Handles the 'checkout.session.completed' event.
+    """
+    client_reference_id = session.get('client_reference_id')
+    if not client_reference_id:
+        print("ERROR: client_reference_id not found in session")
+        return
 
+    user = User.objects(id=client_reference_id).first()
+    if not user:
+        print(f"ERROR: User with id {client_reference_id} not found.")
+        return
+
+    # Example: Update user's subscription status or grant access to a feature
+    # In this example, let's assume we are updating the user's generation limits
+    # based on the product they purchased.
+
+    # You would typically retrieve the line items from the session to determine
+    # what was purchased. For simplicity, we will just update the limits here.
+    user.daily_generation_limit = 100  # New daily limit
+    user.monthly_generation_limit = 1000 # New monthly limit
+    user.save()
+
+    print(f"Successfully updated limits for user {user.email}")
+
+
+def handle_payment_succeeded(invoice):
+    """
+    Handles the 'invoice.payment_succeeded' event.
+    """
+    customer_id = invoice.get('customer')
+    if not customer_id:
+        print("ERROR: customer_id not found in invoice")
+        return
+
+    # You can retrieve the user by their Stripe customer ID if you have stored it
+    # in your User model. This is a robust way to link your users to Stripe customers.
+    # For now, we will assume you can look them up by email.
+    customer_email = invoice.get('customer_email')
+    if not customer_email:
+        print("ERROR: customer_email not found in invoice")
+        return
+
+    user = User.objects(email=customer_email).first()
+    if not user:
+        print(f"ERROR: User with email {customer_email} not found.")
+        return
+
+    # Logic to handle a successful recurring payment, for example,
+    # extending their subscription period.
+    print(f"Invoice payment successful for user {user.email}")
+    
 def generate_text_with_gemini(prompt_text):
     # ... (function code is correct and remains unchanged)
     if not prompt_text:
@@ -238,7 +293,7 @@ def generate_content():
     # --- 2. PROMPT INJECTION CHECK ---
     if check_for_prompt_injection(features_raw):
         # Using abort() is a clean way to stop the request and return an error
-        abort(404, description="Resource not found due to invalid input.")
+        abort(400, description="Invalid input provided.")
 
     ## FIXED: Completely new logic for state-based limit checking
     # --- 3. USAGE LIMIT CHECK (State-based) ---
@@ -283,7 +338,41 @@ def generate_content():
 
     # --- 8. RETURN RESULT ---
     return jsonify({"generatedText": ai_result}), 200
+# --- Billing Webhook Route ---
+@app.route('/api/billing', methods=['POST'])
+def stripe_webhook():
+    """
+    Handles incoming Stripe webhooks to update user billing information.
+    """
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get('Stripe-Signature')
+    event = None
 
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, webhook_secret
+        )
+    except ValueError as e:
+        # Invalid payload
+        return 'Invalid payload', 400
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return 'Invalid signature', 400
+
+    # Handle the event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        # Fulfill the purchase...
+        handle_checkout_session(session)
+    elif event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        # Handle successful payment...
+        handle_payment_succeeded(invoice)
+    # ... handle other event types
+    else:
+        print('Unhandled event type {}'.format(event['type']))
+
+    return jsonify(success=True)
 
 # --- Server Start ---
 if __name__ == '__main__':
