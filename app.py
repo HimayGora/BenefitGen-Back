@@ -1,31 +1,57 @@
+import os
+import dotenv
+import google.generativeai as genai
+from google.generativeai import types
+import google.api_core
+import re
 from flask import Flask, jsonify, request, redirect, url_for, abort
 from flask_cors import CORS
 from flask_talisman import Talisman
-import os
-import google.generativeai as genai
 from flask_mongoengine import MongoEngine
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import stripe
+import base64
+import binascii
 
 # --- Configuration & Setup ---
-from dotenv import load_dotenv
-load_dotenv()
+dotenv.load_dotenv()
 
+# Initialize the Gemini API
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("API key not found in your .env file. Please set GEMINI_API_KEY.")
+genai.configure(api_key=api_key)
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
-model = genai.GenerativeModel('gemini-1.5-flash')
-
+# Initialize Flask app
 app = Flask(__name__)
+
+# --- Load Prompts ---
+prompts_folder = 'prompts'
+prompts = {}
+if os.path.exists(prompts_folder):
+    for filename in os.listdir(prompts_folder):
+        prompt_name = os.path.splitext(filename)[0]
+        with open(os.path.join(prompts_folder, filename), 'r') as f:
+            prompts[prompt_name] = f.read()
+else:
+    print(f"Warning: Prompts folder '{prompts_folder}' not found. Creating it.")
+    os.makedirs(prompts_folder, exist_ok=True)
+    # Create a default prompt for demonstration
+    default_prompt_path = os.path.join(prompts_folder, "default_prompt.md")
+    with open(default_prompt_path, 'w') as f:
+        f.write("Generate a detailed description based on the following features: [FEATURES_PLACEHOLDER]")
+    prompts['default_prompt'] = "Generate a detailed description based on the following features: [FEATURES_PLACEHOLDER]"
+    print(f"Created a default prompt at '{default_prompt_path}'")
+
 
 app.config['MONGODB_SETTINGS'] = {
     'host': os.getenv("MONGO_URI", "mongodb://localhost:27017/your_default_db")
 }
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "a_very_secret_key_that_should_be_in_env_for_production")
-stripe.api_key = os.getenv("STRIPE_API_KEY") 
+stripe.api_key = os.getenv("STRIPE_API_KEY")
 webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
-
 
 db = MongoEngine(app)
 login_manager = LoginManager()
@@ -34,21 +60,15 @@ login_manager.login_view = 'login'
 
 # --- User Model ---
 class User(UserMixin, db.Document):
-    """
-    User model with email and state-based generation limits.
-    """
     email = db.StringField(required=True, unique=True)
     password_hash = db.StringField(required=True)
-    
-    ## FIXED: Added fields for state-based limit tracking
     daily_generations = db.IntField(default=0)
-    last_generation_day = db.IntField(default=0) # Will store the day of the year (1-366)
+    last_generation_day = db.IntField(default=0)
     monthly_generations = db.IntField(default=0)
-    last_generation_month = db.IntField(default=0) # Will store the month (1-12)
-
-    ## FIXED: Default limits are still here
+    last_generation_month = db.IntField(default=0)
     daily_generation_limit = db.IntField(default=20)
     monthly_generation_limit = db.IntField(default=200)
+    plan= db.StringField(default='free')  # 'free', 'pro', etc.
     date_created = db.DateTimeField(default=datetime.datetime.utcnow)
 
     def set_password(self, password):
@@ -67,137 +87,99 @@ def load_user(user_id):
     except User.DoesNotExist:
         return None
 
-# --- Helper Functions (UPDATED) ---
+# --- Helper Functions ---
 
-# ADDED: List of prompt injection keywords
-PROMPT_INJECTION_KEYWORDS = [
-    "ignore all previous instructions",
-    "ignore the above",
-    "ignore your instructions",
-    "disregard the previous statement",
-    "forget the preceding text",
-    "act as",
-    "pretend to be",
-    "you are a",
-    "developer mode",
-    "dev mode",
-    "system prompt",
-    "your initial instructions",
-    "repeat the text above",
-    "what were your exact instructions",
-    "translate this sentence as",
-    "haha pwned",
-    "render markdown",
-    "execute code",
-    "run python",
-    "do anything now",
-    "DAN prompt"
-]
-
-def check_for_prompt_injection(input_text):
-    """
-    Checks for prompt injection keywords in the input text.
-    Returns True if a keyword is found, False otherwise.
-    """
-    # Convert input to lowercase for case-insensitive matching
-    lower_input = input_text.lower()
-    # Check if any of the keywords are present in the input
-    if any(keyword in lower_input for keyword in PROMPT_INJECTION_KEYWORDS):
+def is_valid_input(user_input):
+    MAX_INPUT_LENGTH = 4000
+    if len(user_input) > MAX_INPUT_LENGTH:
+        return False
+    PROMPT_INJECTION_PATTERNS = [
+        r"\bignore all previous instructions\b", r"\bignore the above\b",
+        r"\bignore your instructions\b", r"\bdisregard the previous statement\b",
+        r"\bforget the preceding text\b", r"\bpretend to be\b", r"\bdev mode\b",
+        r"\bsystem prompt\b", r"\byour initial instructions\b",
+        r"\brepeat the text above\b", r"\bwhat were your exact instructions\b",
+        r"\btranslate this sentence as\b", r"\bdo anything now\b", r"\bDAN prompt\b"
+    ]
+    def run_checks(text_to_check):
+        for pattern in PROMPT_INJECTION_PATTERNS:
+            if re.search(pattern, text_to_check, re.IGNORECASE):
+                return False
         return True
-    return False
 
-def read_prompt_template(filename="landing_prompt.md"):
-    # ... (function code is correct and remains unchanged)
-    current_dir = os.path.dirname(__file__)
-    prompts_dir = os.path.join(current_dir, 'prompts')
-    prompt_path = os.path.join(prompts_dir, filename)
+    if not run_checks(user_input):
+        return False
 
     try:
-        with open(prompt_path, 'r') as f:
-            content = f.read()
-            return content
-    except FileNotFoundError:
-        print(f"ERROR: Prompt file not found at {prompt_path}. Ensure it exists in the 'prompts' directory.")
-        return None
+        decoded_input = base64.b64decode(user_input).decode('utf-8')
+        if not run_checks(decoded_input):
+            return False
+    except (binascii.Error, UnicodeDecodeError):
+        pass
+
+    return True
+
+def generate_text_with_gemini(temp, max_output_tokens, system_instruction, contents):
+    ## Error Code Meaning: 1(Invalid Temperature), 2(Invalid Max Output Tokens), 3(Invalid System Instruction), 4(Invalid Contents), 5(Invalid Input Detected)
+    if not isinstance(temp, (int, float)) or not 0 <= temp <= 1: return "Error: Code 1."
+    if not isinstance(max_output_tokens, int) or max_output_tokens <= 0: return "Error: Code 2."
+    if not system_instruction or not isinstance(system_instruction, str): return "Error: Code 3."
+    if not contents or not isinstance(contents, str): return "Error: Code 4."
+    if not is_valid_input(contents): return "Error: Code 5."
+
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=system_instruction
+        )
+        generation_config = types.GenerationConfig(
+            temperature=temp,
+            max_output_tokens=max_output_tokens
+        )
+        response = model.generate_content(
+            contents=contents,
+            generation_config=generation_config
+        )
+        return response.text
+    except google.api_core.exceptions.InvalidArgument as e:
+        return "Error: Invalid argument provided to the API. Please check the 'contents' you sent."
+    except google.api_core.exceptions.PermissionDenied as e:
+        return "Error: API key is invalid or missing. Please check your configuration."
+    except google.api_core.exceptions.ResourceExhausted as e:
+        return "Error: The API quota has been exceeded. Please try again later."
+    except genai.types.generation_types.BlockedPromptException as e:
+        return "Error: The prompt was blocked for safety reasons. Please modify the input"
     except Exception as e:
-        print(f"ERROR: An unexpected error occurred while reading prompt file {prompt_path}: {e}")
-        return None
+        return f"An unexpected API error occurred: {e}"
+
+
 def handle_checkout_session(session):
-    """
-    Handles the 'checkout.session.completed' event.
-    """
     client_reference_id = session.get('client_reference_id')
     if not client_reference_id:
         print("ERROR: client_reference_id not found in session")
         return
-
     user = User.objects(id=client_reference_id).first()
     if not user:
         print(f"ERROR: User with id {client_reference_id} not found.")
         return
-
-    # Example: Update user's subscription status or grant access to a feature
-    # In this example, let's assume we are updating the user's generation limits
-    # based on the product they purchased.
-
-    # You would typically retrieve the line items from the session to determine
-    # what was purchased. For simplicity, we will just update the limits here.
-    user.daily_generation_limit = 100  # New daily limit
-    user.monthly_generation_limit = 1000 # New monthly limit
+    user.daily_generation_limit = 100
+    user.monthly_generation_limit = 1000
     user.save()
-
     print(f"Successfully updated limits for user {user.email}")
 
 
 def handle_payment_succeeded(invoice):
-    """
-    Handles the 'invoice.payment_succeeded' event.
-    """
-    customer_id = invoice.get('customer')
-    if not customer_id:
-        print("ERROR: customer_id not found in invoice")
-        return
-
-    # You can retrieve the user by their Stripe customer ID if you have stored it
-    # in your User model. This is a robust way to link your users to Stripe customers.
-    # For now, we will assume you can look them up by email.
     customer_email = invoice.get('customer_email')
     if not customer_email:
         print("ERROR: customer_email not found in invoice")
         return
-
     user = User.objects(email=customer_email).first()
     if not user:
         print(f"ERROR: User with email {customer_email} not found.")
         return
-
-    # Logic to handle a successful recurring payment, for example,
-    # extending their subscription period.
     print(f"Invoice payment successful for user {user.email}")
-    
-def generate_text_with_gemini(prompt_text):
-    # ... (function code is correct and remains unchanged)
-    if not prompt_text:
-        return "Error: Prompt cannot be empty."
-    try:
-        response = model.generate_content(
-            [prompt_text],
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3,
-                max_output_tokens=800
-            )
-        )
-        if response.candidates and response.candidates[0].content.parts:
-            return response.candidates[0].content.parts[0].text.strip()
-        else:
-            print("WARNING: Gemini API returned no content in the expected format.")
-            return "An error occurred during text generation: No content returned."
-    except Exception as e:
-        print(f"An error occurred during text generation: {e}")
-        return f"An error occurred during text generation. Details: {e}"
 
-
-# --- Config for CORS and CSP (Unchanged) ---
+# --- Config for CORS and CSP ---
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://generator.hsgportfolio.com")
 BACKEND_API_URL = os.getenv("RENDER_EXTERNAL_URL", "https://mvp-flask-api.onrender.com")
 ALLOWED_CORS_ORIGINS = [FRONTEND_BASE_URL, f"{FRONTEND_BASE_URL}/"]
@@ -210,55 +192,33 @@ Talisman(
     session_cookie_samesite='None'
 )
 
-
 # --- Authentication Routes ---
 @app.route('/api/register', methods=['POST'])
 def register():
-    """
-    Handles user registration. Requires 'email' and 'password'.
-    """
     data = request.get_json()
-    ## FIXED: Use 'email' instead of 'username'
     email = data.get('email')
     password = data.get('password')
-
-    ## FIXED: Check for 'email'
     if not email or not password:
         return jsonify({"status": "error", "message": "Email and password are required."}), 400
-
-    ## FIXED: Check if email already exists
     if User.objects(email=email).first():
-        return jsonify({"status": "error", "message": "Email address already in use."}), 409 # 409 Conflict
-
-    ## FIXED: Create user with email
+        return jsonify({"status": "error", "message": "Email address already in use."}), 409
     new_user = User(email=email)
     new_user.set_password(password)
     new_user.save()
-
     return jsonify({"status": "ok", "message": "User registered successfully."}), 201
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    """
-    Handles user login. Requires 'email' and 'password'.
-    """
     data = request.get_json()
-    ## FIXED: Use 'email' instead of 'username'
     email = data.get('email')
     password = data.get('password')
-
-    ## FIXED: Check for 'email'
     if not email or not password:
         return jsonify({"status": "error", "message": "Email and password are required."}), 400
-
-    ## FIXED: Look up user by email
     user = User.objects(email=email).first()
-
     if user and user.check_password(password):
         login_user(user)
         return jsonify({"status": "ok", "message": "Logged in successfully."}), 200
     else:
-        ## FIXED: More accurate error message
         return jsonify({"status": "error", "message": "Invalid email or password."}), 401
 
 @app.route('/api/logout', methods=['POST'])
@@ -270,105 +230,93 @@ def logout():
 @app.route('/api/status', methods=['GET'])
 def get_login_status():
     if current_user.is_authenticated:
-        ## FIXED: Return 'email' instead of 'username'
-        return jsonify({"status": "ok", "message": "User is logged in.", "email": current_user.email}), 200
+        # Check if the user is logged in
+        return jsonify({
+            "status": "ok", 
+            "message": "User is logged in.", 
+            "email": current_user.email,
+            "plan": current_user.plan  # Include the user's plan in the response
+        }), 200
     else:
         return jsonify({"status": "error", "message": "User is not logged in."}), 401
 
-
-# --- Main Application Route (UPDATED) ---
-@app.route('/api/generate', methods=['POST'])
+# --- Main Application Route ---
+@app.route('/api/generate/<prompt_name>', methods=['POST'])
 @login_required
-def generate_content():
-    """
-    Generates content, enforcing state-based usage limits and checking for prompt injection.
-    """
+def generate_content(prompt_name):
     # --- 1. GET AND VALIDATE INPUT ---
     data = request.get_json()
-    features_raw = data.get('features')
+    contents = data.get('contents')
 
-    if not features_raw:
-        return jsonify({"error": "Features are a required field."}), 400
-    
-    # --- 2. PROMPT INJECTION CHECK ---
-    if check_for_prompt_injection(features_raw):
-        # Using abort() is a clean way to stop the request and return an error
-        abort(400, description="Invalid input provided.")
+    if not contents:
+        return jsonify({"error": "Field 'contents' is required."}), 400
 
-    ## FIXED: Completely new logic for state-based limit checking
-    # --- 3. USAGE LIMIT CHECK (State-based) ---
+    if prompt_name not in prompts:
+        return jsonify({"error": f"Prompt '{prompt_name}' not found."}), 404
+
+    # --- 2. USAGE LIMIT CHECK ---
     now = datetime.datetime.utcnow()
     today_day_of_year = now.timetuple().tm_yday
     current_month = now.month
 
-    # Reset daily counter if the last generation was on a different day
     if current_user.last_generation_day != today_day_of_year:
         current_user.daily_generations = 0
         current_user.last_generation_day = today_day_of_year
     
-    # Reset monthly counter if the last generation was in a different month
     if current_user.last_generation_month != current_month:
         current_user.monthly_generations = 0
         current_user.last_generation_month = current_month
 
-    # Check limits
     if current_user.daily_generations >= current_user.daily_generation_limit:
         return jsonify({"error": "Daily generation limit reached."}), 429
     
     if current_user.monthly_generations >= current_user.monthly_generation_limit:
         return jsonify({"error": "Monthly generation limit reached."}), 429
 
-    # --- 4. READ PROMPT ---
-    prompt_template = read_prompt_template("landing_prompt.md")
-    if not prompt_template:
-        return jsonify({"error": "Could not load prompt template."}), 500
+    # --- 3. GENERATE CONTENT ---
+    temp = float(os.getenv('TB_temp', '0.5'))
+    max_tokens = 600
+    system_instruction = prompts[prompt_name]
+    
+    # Replace placeholder in the prompt if it exists
+    final_contents = system_instruction.replace("[FEATURES_PLACEHOLDER]", contents)
 
-    # --- 5. SANITIZE AND PREPARE FINAL PROMPT ---
-    features_sanitized = features_raw.strip()
-    final_prompt = prompt_template.replace("[FEATURES_PLACEHOLDER]", features_sanitized)
+    result = generate_text_with_gemini(
+        temp=temp,
+        max_output_tokens=max_tokens,
+        system_instruction=system_instruction, # The full prompt template acts as the system instruction
+        contents=contents # The user's specific input
+    )
 
-    # --- 6. GENERATE CONTENT ---
-    ai_result = generate_text_with_gemini(final_prompt)
+    if result.startswith("Error:"):
+        return jsonify({"error": result}), 400
 
-    # --- 7. INCREMENT COUNTERS on successful generation ---
-    if "An error occurred" not in ai_result:
-        current_user.daily_generations += 1
-        current_user.monthly_generations += 1
-        current_user.save()
+    # --- 4. INCREMENT COUNTERS ---
+    current_user.daily_generations += 1
+    current_user.monthly_generations += 1
+    current_user.save()
 
-    # --- 8. RETURN RESULT ---
-    return jsonify({"generatedText": ai_result}), 200
+    # --- 5. RETURN RESULT ---
+    return jsonify({"generatedText": result}), 200
+
 # --- Billing Webhook Route ---
 @app.route('/api/billing', methods=['POST'])
 def stripe_webhook():
-    """
-    Handles incoming Stripe webhooks to update user billing information.
-    """
     payload = request.get_data(as_text=True)
     sig_header = request.headers.get('Stripe-Signature')
     event = None
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, webhook_secret
-        )
-    except ValueError as e:
-        # Invalid payload
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError:
         return 'Invalid payload', 400
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
+    except stripe.error.SignatureVerificationError:
         return 'Invalid signature', 400
 
-    # Handle the event
     if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        # Fulfill the purchase...
-        handle_checkout_session(session)
+        handle_checkout_session(event['data']['object'])
     elif event['type'] == 'invoice.payment_succeeded':
-        invoice = event['data']['object']
-        # Handle successful payment...
-        handle_payment_succeeded(invoice)
-    # ... handle other event types
+        handle_payment_succeeded(event['data']['object'])
     else:
         print('Unhandled event type {}'.format(event['type']))
 
@@ -376,13 +324,5 @@ def stripe_webhook():
 
 # --- Server Start ---
 if __name__ == '__main__':
-    # ... (this section is correct and remains unchanged)
-    prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
-    os.makedirs(prompts_dir, exist_ok=True)
-    landing_prompt_path = os.path.join(prompts_dir, "landing_prompt.md")
-    if not os.path.exists(landing_prompt_path):
-        with open(landing_prompt_path, 'w') as f:
-            f.write("Generate a detailed description based on the following features: [FEATURES_PLACEHOLDER]")
-        print(f"Created a default {landing_prompt_path} in the 'prompts' directory.")
     port = int(os.getenv("PORT", 5001))
     app.run(debug=False, host='0.0.0.0', port=port)
