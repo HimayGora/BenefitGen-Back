@@ -32,7 +32,7 @@ prompts_folder = 'prompts'
 prompts = {}
 if os.path.exists(prompts_folder):
     for filename in os.listdir(prompts_folder):
-        prompt_name = os.path.splitext(filename)[0]
+        prompt_name = os.path.splitext(filename)[0].lower()
         with open(os.path.join(prompts_folder, filename), 'r') as f:
             prompts[prompt_name] = f.read()
 else:
@@ -94,9 +94,9 @@ def is_valid_input(user_input):
     if len(user_input) > MAX_INPUT_LENGTH:
         return False
     PROMPT_INJECTION_PATTERNS = [
-        r"\bignore all previous instructions\b", r"\bignore the above\b",
+        r"\bignore all previous instructions\b", 
         r"\bignore your instructions\b", r"\bdisregard the previous statement\b",
-        r"\bforget the preceding text\b", r"\bpretend to be\b", r"\bdev mode\b",
+        r"\bforget the preceding text\b", r"\bpretend to be\b",
         r"\bsystem prompt\b", r"\byour initial instructions\b",
         r"\brepeat the text above\b", r"\bwhat were your exact instructions\b",
         r"\btranslate this sentence as\b", r"\bdo anything now\b", r"\bDAN prompt\b"
@@ -107,7 +107,7 @@ def is_valid_input(user_input):
                 return False
         return True
 
-    if not run_checks(user_input):
+    if not run_checks(user_input): 
         return False
 
     try:
@@ -184,13 +184,16 @@ FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://generator.hsgportfol
 BACKEND_API_URL = os.getenv("RENDER_EXTERNAL_URL", "https://mvp-flask-api.onrender.com")
 ALLOWED_CORS_ORIGINS = [FRONTEND_BASE_URL, f"{FRONTEND_BASE_URL}/"]
 csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', BACKEND_API_URL, FRONTEND_BASE_URL], }
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_CORS_ORIGINS}}, supports_credentials=True)
-Talisman(
-    app,
-    content_security_policy=csp,
-    session_cookie_secure=True,
-    session_cookie_samesite='None'
-)
+CORS(app, origins=ALLOWED_CORS_ORIGINS, supports_credentials=True)
+if os.getenv('FLASK_DEBUG') != '1':
+    print("--- RUNNING IN PRODUCTION MODE: Applying Talisman ---")
+    csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', os.getenv("RENDER_EXTERNAL_URL"), os.getenv("FRONTEND_BASE_URL")], }
+    Talisman(
+        app,
+        content_security_policy=csp,
+        session_cookie_secure=True,
+        session_cookie_samesite='None'
+    )
 
 # --- Authentication Routes ---
 @app.route('/api/register', methods=['POST'])
@@ -247,6 +250,7 @@ def generate_content(prompt_name):
     # --- 1. GET AND VALIDATE INPUT ---
     data = request.get_json()
     contents = data.get('contents')
+    prompt_name = prompt_name.lower()
 
     if not contents:
         return jsonify({"error": "Field 'contents' is required."}), 400
@@ -275,7 +279,7 @@ def generate_content(prompt_name):
 
     # --- 3. GENERATE CONTENT ---
     temp = float(os.getenv('TB_temp', '0.5'))
-    max_tokens = 600
+    max_tokens = 1200
     system_instruction = prompts[prompt_name]
     
     # Replace placeholder in the prompt if it exists
@@ -325,4 +329,4 @@ def stripe_webhook():
 # --- Server Start ---
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5001))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=port)
