@@ -60,12 +60,12 @@ login_manager.login_view = 'login'
 
 
 PLAN_DETAILS = {
-    'price_xxxxxxxxxxxxxx': { # Replace with your Pro Plan Price ID from Stripe
+    'prod_SggQsgqkHOCPi3': { # Replace with your Pro Plan Price ID from Stripe
         'name': 'pro', 
         'daily_limit': 20, 
         'monthly_limit': 450
     },
-    'price_yyyyyyyyyyyyyy': { # Replace with your Business Plan Price ID
+    'prod_SggRiU8cNzdjNu': { # Replace with your Business Plan Price ID
         'name': 'ultra', 
         'daily_limit': 100, 
         'monthly_limit': 1200
