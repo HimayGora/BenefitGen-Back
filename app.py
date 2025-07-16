@@ -14,6 +14,7 @@ import datetime
 import stripe
 import base64
 import binascii
+from functools import wraps
 
 # --- Configuration & Setup ---
 dotenv.load_dotenv()
@@ -62,8 +63,8 @@ login_manager.login_view = 'login'
 PLAN_DETAILS = {
     'prod_SggQsgqkHOCPi3': { # Replace with your Pro Plan Price ID from Stripe
         'name': 'pro', 
-        'daily_limit': 20, 
-        'monthly_limit': 450
+        'daily_limit': 500, 
+        'monthly_limit': 5000
     },
     'prod_SggRiU8cNzdjNu': { # Replace with your Business Plan Price ID
         'name': 'ultra', 
@@ -80,9 +81,10 @@ class User(UserMixin, db.Document):
     last_generation_day = db.IntField(default=0)
     monthly_generations = db.IntField(default=0)
     last_generation_month = db.IntField(default=0)
+    last_login = db.DateTimeField(default=datetime.datetime.utcnow)
     daily_generation_limit = db.IntField(default=20)
     monthly_generation_limit = db.IntField(default=200)
-    plan= db.StringField(default='free')  # 'free', 'pro', etc.
+    plan= db.StringField(default='free')  # 'free', 'pro', 'admin'
     date_created = db.DateTimeField(default=datetime.datetime.utcnow)
 
     def set_password(self, password):
@@ -100,6 +102,15 @@ def load_user(user_id):
         return User.objects.get(pk=user_id)
     except User.DoesNotExist:
         return None
+
+# --- Decorators ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.plan != 'admin':
+            abort(403)  # Forbidden
+        return f(*args, **kwargs)
+    return decorated_function
 
 # --- Helper Functions ---
 
@@ -256,6 +267,8 @@ def login():
     user = User.objects(email=email).first()
     if user and user.check_password(password):
         login_user(user)
+        user.last_login = datetime.datetime.utcnow()
+        user.save()
         return jsonify({"status": "ok", "message": "Logged in successfully."}), 200
     else:
         return jsonify({"status": "error", "message": "Invalid email or password."}), 401
@@ -390,6 +403,59 @@ def stripe_webhook():
         print('Unhandled event type {}'.format(event['type']))
 
     return jsonify(success=True)
+
+# --- Admin Routes ---
+@app.route('/api/admin/users', methods=['GET'])
+@login_required
+@admin_required
+def admin_get_all_users():
+    users = User.objects.all()
+    user_list = []
+    for user in users:
+        user_list.append({
+            'id': str(user.id),
+            'email': user.email,
+            'plan': user.plan,
+            'daily_generation_limit': user.daily_generation_limit,
+            'monthly_generation_limit': user.monthly_generation_limit,
+            'daily_generations': user.daily_generations,
+            'monthly_generations': user.monthly_generations,
+        })
+    return jsonify({'users': user_list})
+
+@app.route('/api/admin/users/<user_id>', methods=['PUT'])
+@login_required
+@admin_required
+def admin_update_user(user_id):
+    data = request.get_json()
+    user = User.objects(id=user_id).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    user.plan = data.get('plan', user.plan)
+    user.daily_generation_limit = data.get('daily_generation_limit', user.daily_generation_limit)
+    user.monthly_generation_limit = data.get('monthly_generation_limit', user.monthly_generation_limit)
+    user.save()
+
+    return jsonify({'message': 'User updated successfully'})
+
+@app.route('/api/admin/stats', methods=['GET'])
+@login_required
+@admin_required
+def admin_get_site_stats():
+    total_users = User.objects.count()
+    pro_users = User.objects(plan='pro').count()
+    
+    # Monthly Active Users (users who logged in within the last 30 days)
+    thirty_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=30)
+    monthly_active_users = User.objects(last_login__gte=thirty_days_ago).count()
+    
+    return jsonify({
+        'total_users': total_users,
+        'pro_users': pro_users,
+        'monthly_active_users': monthly_active_users
+    })
+
 
 # --- Server Start ---
 if __name__ == '__main__':
