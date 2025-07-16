@@ -15,9 +15,17 @@ import stripe
 import base64
 import binascii
 from functools import wraps
+import logging # NEW: Import the logging library
 
 # --- Configuration & Setup ---
 dotenv.load_dotenv()
+
+# --- NEW: Lightweight Logging Setup ---
+# This will print logs to the console, which your hosting provider can capture.
+# It uses no database space and has minimal CPU impact.
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
 # Initialize the Gemini API
 api_key = os.getenv("GEMINI_API_KEY")
@@ -37,14 +45,14 @@ if os.path.exists(prompts_folder):
         with open(os.path.join(prompts_folder, filename), 'r') as f:
             prompts[prompt_name] = f.read()
 else:
-    print(f"Warning: Prompts folder '{prompts_folder}' not found. Creating it.")
+    logging.warning(f"Prompts folder '{prompts_folder}' not found. Creating it.")
     os.makedirs(prompts_folder, exist_ok=True)
     # Create a default prompt for demonstration
     default_prompt_path = os.path.join(prompts_folder, "default_prompt.md")
     with open(default_prompt_path, 'w') as f:
         f.write("Generate a detailed description based on the following features: [FEATURES_PLACEHOLDER]")
     prompts['default_prompt'] = "Generate a detailed description based on the following features: [FEATURES_PLACEHOLDER]"
-    print(f"Created a default prompt at '{default_prompt_path}'")
+    logging.info(f"Created a default prompt at '{default_prompt_path}'")
 
 
 app.config['MONGODB_SETTINGS'] = {
@@ -108,6 +116,7 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or current_user.plan != 'admin':
+            logging.warning(f"Forbidden: Non-admin user '{current_user.email}' attempted to access an admin route.")
             abort(403)  # Forbidden
         return f(*args, **kwargs)
     return decorated_function
@@ -167,64 +176,64 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
         )
         return response.text
     except google.api_core.exceptions.InvalidArgument as e:
+        logging.error(f"Gemini API InvalidArgument Error: {e}")
         return "Error: Invalid argument provided to the API. Please check the 'contents' you sent."
     except google.api_core.exceptions.PermissionDenied as e:
+        logging.critical(f"Gemini API PermissionDenied Error: {e}")
         return "Error: API key is invalid or missing. Please check your configuration."
     except google.api_core.exceptions.ResourceExhausted as e:
+        logging.warning(f"Gemini API ResourceExhausted Error: {e}")
         return "Error: The API quota has been exceeded. Please try again later."
     except genai.types.generation_types.BlockedPromptException as e:
+        logging.warning(f"Gemini API BlockedPromptException: {e}")
         return "Error: The prompt was blocked for safety reasons. Please modify the input"
     except Exception as e:
+        logging.error(f"An unexpected Gemini API error occurred: {e}")
         return f"An unexpected API error occurred: {e}"
 
-
-# Replace your existing handle_checkout_session function with this one
 
 def handle_checkout_session(session):
     client_reference_id = session.get('client_reference_id')
     if not client_reference_id:
-        print("ERROR: client_reference_id not found in session")
+        logging.error("Stripe Webhook: client_reference_id not found in session.")
         return
 
     user = User.objects(id=client_reference_id).first()
     if not user:
-        print(f"ERROR: User with id {client_reference_id} not found.")
+        logging.error(f"Stripe Webhook: User with id {client_reference_id} not found.")
         return
 
     try:
-        # Retrieve the session with line items
         session_with_line_items = stripe.checkout.Session.retrieve(
             session.id,
             expand=['line_items']
         )
-        # Get the price ID from the line items
         price_id = session_with_line_items.line_items.data[0].price.id
         
-        # Look up plan details from our map
         if price_id in PLAN_DETAILS:
             plan = PLAN_DETAILS[price_id]
             user.plan = plan['name']
             user.daily_generation_limit = plan['daily_limit']
             user.monthly_generation_limit = plan['monthly_limit']
             user.save()
-            print(f"Successfully upgraded user {user.email} to the {user.plan} plan.")
+            logging.info(f"Stripe Webhook: Successfully upgraded user {user.email} to the {user.plan} plan.")
         else:
-            print(f"ERROR: Price ID {price_id} not found in PLAN_DETAILS map.")
+            logging.error(f"Stripe Webhook: Price ID {price_id} not found in PLAN_DETAILS map.")
 
     except Exception as e:
-        print(f"Error processing checkout session: {e}")
+        logging.error(f"Stripe Webhook: Error processing checkout session: {e}")
 
 
 def handle_payment_succeeded(invoice):
     customer_email = invoice.get('customer_email')
     if not customer_email:
-        print("ERROR: customer_email not found in invoice")
+        logging.error("Stripe Webhook: customer_email not found in invoice.")
         return
     user = User.objects(email=customer_email).first()
     if not user:
-        print(f"ERROR: User with email {customer_email} not found.")
+        logging.error(f"Stripe Webhook: User with email {customer_email} not found.")
         return
-    print(f"Invoice payment successful for user {user.email}")
+    logging.info(f"Stripe Webhook: Invoice payment successful for user {user.email}")
 
 # --- Config for CORS and CSP ---
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://generator.hsgportfolio.com")
@@ -233,7 +242,7 @@ ALLOWED_CORS_ORIGINS = [FRONTEND_BASE_URL, f"{FRONTEND_BASE_URL}/"]
 csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', BACKEND_API_URL, FRONTEND_BASE_URL], }
 CORS(app, origins=ALLOWED_CORS_ORIGINS, supports_credentials=True)
 if os.getenv('FLASK_DEBUG') != '1':
-    print("--- RUNNING IN PRODUCTION MODE: Applying Talisman ---")
+    logging.info("--- RUNNING IN PRODUCTION MODE: Applying Talisman ---")
     csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', os.getenv("RENDER_EXTERNAL_URL"), os.getenv("FRONTEND_BASE_URL")], }
     Talisman(
         app,
@@ -255,6 +264,7 @@ def register():
     new_user = User(email=email)
     new_user.set_password(password)
     new_user.save()
+    logging.info(f"New user registered: {email}")
     return jsonify({"status": "ok", "message": "User registered successfully."}), 201
 
 @app.route('/api/login', methods=['POST'])
@@ -269,25 +279,28 @@ def login():
         login_user(user)
         user.last_login = datetime.datetime.utcnow()
         user.save()
+        logging.info(f"Successful login for user: {email}")
         return jsonify({"status": "ok", "message": "Logged in successfully."}), 200
     else:
+        # NEW: Log failed login attempts. The IP is often logged by the webserver/proxy.
+        logging.warning(f"Failed login attempt for email: {email}")
         return jsonify({"status": "error", "message": "Invalid email or password."}), 401
 
 @app.route('/api/logout', methods=['POST'])
 @login_required
 def logout():
+    logging.info(f"User logged out: {current_user.email}")
     logout_user()
     return jsonify({"status": "ok", "message": "Logged out successfully."}), 200
 
 @app.route('/api/status', methods=['GET'])
 def get_login_status():
     if current_user.is_authenticated:
-        # Check if the user is logged in
         return jsonify({
             "status": "ok", 
             "message": "User is logged in.", 
             "email": current_user.email,
-            "plan": current_user.plan  # Include the user's plan in the response
+            "plan": current_user.plan
         }), 200
     else:
         return jsonify({"status": "error", "message": "User is not logged in."}), 401
@@ -296,7 +309,6 @@ def get_login_status():
 @app.route('/api/generate/<prompt_name>', methods=['POST'])
 @login_required
 def generate_content(prompt_name):
-    # --- 1. GET AND VALIDATE INPUT ---
     data = request.get_json()
     contents = data.get('contents')
     prompt_name = prompt_name.lower()
@@ -307,7 +319,6 @@ def generate_content(prompt_name):
     if prompt_name not in prompts:
         return jsonify({"error": f"Prompt '{prompt_name}' not found."}), 404
 
-    # --- 2. USAGE LIMIT CHECK ---
     now = datetime.datetime.utcnow()
     today_day_of_year = now.timetuple().tm_yday
     current_month = now.month
@@ -321,35 +332,33 @@ def generate_content(prompt_name):
         current_user.last_generation_month = current_month
 
     if current_user.daily_generations >= current_user.daily_generation_limit:
+        logging.warning(f"User {current_user.email} reached daily generation limit.")
         return jsonify({"error": "Daily generation limit reached."}), 429
     
     if current_user.monthly_generations >= current_user.monthly_generation_limit:
+        logging.warning(f"User {current_user.email} reached monthly generation limit.")
         return jsonify({"error": "Monthly generation limit reached."}), 429
 
-    # --- 3. GENERATE CONTENT ---
     temp = float(os.getenv('TB_temp', '0.5'))
     max_tokens = 1200
     system_instruction = prompts[prompt_name]
     
-    # Replace placeholder in the prompt if it exists
     final_contents = system_instruction.replace("[FEATURES_PLACEHOLDER]", contents)
 
     result = generate_text_with_gemini(
         temp=temp,
         max_output_tokens=max_tokens,
-        system_instruction=system_instruction, # The full prompt template acts as the system instruction
-        contents=contents # The user's specific input
+        system_instruction=system_instruction,
+        contents=contents
     )
 
     if result.startswith("Error:"):
         return jsonify({"error": result}), 400
 
-    # --- 4. INCREMENT COUNTERS ---
     current_user.daily_generations += 1
     current_user.monthly_generations += 1
     current_user.save()
 
-    # --- 5. RETURN RESULT ---
     return jsonify({"generatedText": result}), 200
 
 # --- Stripe Checkout Session Route ---
@@ -363,12 +372,11 @@ def create_checkout_session():
         return jsonify({"error": "priceId is required"}), 400
 
     try:
-        # Create a new checkout session for the subscription
         checkout_session = stripe.checkout.Session.create(
-            client_reference_id=current_user.get_id(), # Pass the user's ID
-            customer_email=current_user.email, # Pre-fill the user's email
-            success_url=f"{FRONTEND_BASE_URL}/success", # Redirect URL after successful payment
-            cancel_url=f"{FRONTEND_BASE_URL}/cancel",   # Redirect URL if the user cancels
+            client_reference_id=current_user.get_id(),
+            customer_email=current_user.email,
+            success_url=f"{FRONTEND_BASE_URL}/success",
+            cancel_url=f"{FRONTEND_BASE_URL}/cancel",
             payment_method_types=['card'],
             mode='subscription',
             line_items=[{
@@ -376,9 +384,9 @@ def create_checkout_session():
                 'quantity': 1,
             }]
         )
-        # Return the session URL to the frontend
         return jsonify({'url': checkout_session.url})
     except Exception as e:
+        logging.error(f"Stripe create_checkout_session failed for user {current_user.email}: {e}")
         return jsonify(error=str(e)), 403
 
 # --- Billing Webhook Route ---
@@ -391,8 +399,10 @@ def stripe_webhook():
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except ValueError:
+        logging.error("Stripe webhook error: Invalid payload.")
         return 'Invalid payload', 400
     except stripe.error.SignatureVerificationError:
+        logging.error("Stripe webhook error: Invalid signature.")
         return 'Invalid signature', 400
 
     if event['type'] == 'checkout.session.completed':
@@ -400,7 +410,7 @@ def stripe_webhook():
     elif event['type'] == 'invoice.payment_succeeded':
         handle_payment_succeeded(event['data']['object'])
     else:
-        print('Unhandled event type {}'.format(event['type']))
+        logging.info(f"Received unhandled Stripe event type: {event['type']}")
 
     return jsonify(success=True)
 
@@ -431,6 +441,9 @@ def admin_update_user(user_id):
     user = User.objects(id=user_id).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
+    
+    # NEW: Log the admin action
+    logging.info(f"Admin '{current_user.email}' is updating user '{user.email}'. Data: {data}")
 
     user.plan = data.get('plan', user.plan)
     user.daily_generation_limit = data.get('daily_generation_limit', user.daily_generation_limit)
@@ -446,7 +459,6 @@ def admin_get_site_stats():
     total_users = User.objects.count()
     pro_users = User.objects(plan='pro').count()
     
-    # Monthly Active Users (users who logged in within the last 30 days)
     thirty_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=30)
     monthly_active_users = User.objects(last_login__gte=thirty_days_ago).count()
     
@@ -461,3 +473,4 @@ def admin_get_site_stats():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5001))
     app.run(debug=False, host='0.0.0.0', port=port)
+    logging.info(f"Server started on port {port}")
