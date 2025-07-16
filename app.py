@@ -58,6 +58,20 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+
+PLAN_DETAILS = {
+    'price_xxxxxxxxxxxxxx': { # Replace with your Pro Plan Price ID from Stripe
+        'name': 'pro', 
+        'daily_limit': 20, 
+        'monthly_limit': 450
+    },
+    'price_yyyyyyyyyyyyyy': { # Replace with your Business Plan Price ID
+        'name': 'ultra', 
+        'daily_limit': 100, 
+        'monthly_limit': 1200
+    }
+}
+
 # --- User Model ---
 class User(UserMixin, db.Document):
     email = db.StringField(required=True, unique=True)
@@ -153,19 +167,41 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
         return f"An unexpected API error occurred: {e}"
 
 
+# Replace your existing handle_checkout_session function with this one
+
 def handle_checkout_session(session):
     client_reference_id = session.get('client_reference_id')
     if not client_reference_id:
         print("ERROR: client_reference_id not found in session")
         return
+
     user = User.objects(id=client_reference_id).first()
     if not user:
         print(f"ERROR: User with id {client_reference_id} not found.")
         return
-    user.daily_generation_limit = 100
-    user.monthly_generation_limit = 1000
-    user.save()
-    print(f"Successfully updated limits for user {user.email}")
+
+    try:
+        # Retrieve the session with line items
+        session_with_line_items = stripe.checkout.Session.retrieve(
+            session.id,
+            expand=['line_items']
+        )
+        # Get the price ID from the line items
+        price_id = session_with_line_items.line_items.data[0].price.id
+        
+        # Look up plan details from our map
+        if price_id in PLAN_DETAILS:
+            plan = PLAN_DETAILS[price_id]
+            user.plan = plan['name']
+            user.daily_generation_limit = plan['daily_limit']
+            user.monthly_generation_limit = plan['monthly_limit']
+            user.save()
+            print(f"Successfully upgraded user {user.email} to the {user.plan} plan.")
+        else:
+            print(f"ERROR: Price ID {price_id} not found in PLAN_DETAILS map.")
+
+    except Exception as e:
+        print(f"Error processing checkout session: {e}")
 
 
 def handle_payment_succeeded(invoice):
@@ -302,6 +338,35 @@ def generate_content(prompt_name):
 
     # --- 5. RETURN RESULT ---
     return jsonify({"generatedText": result}), 200
+
+# --- Stripe Checkout Session Route ---
+@app.route('/api/create-checkout-session', methods=['POST'])
+@login_required
+def create_checkout_session():
+    data = request.get_json()
+    price_id = data.get('priceId')
+    
+    if not price_id:
+        return jsonify({"error": "priceId is required"}), 400
+
+    try:
+        # Create a new checkout session for the subscription
+        checkout_session = stripe.checkout.Session.create(
+            client_reference_id=current_user.get_id(), # Pass the user's ID
+            customer_email=current_user.email, # Pre-fill the user's email
+            success_url=f"{FRONTEND_BASE_URL}/success", # Redirect URL after successful payment
+            cancel_url=f"{FRONTEND_BASE_URL}/cancel",   # Redirect URL if the user cancels
+            payment_method_types=['card'],
+            mode='subscription',
+            line_items=[{
+                'price': price_id,
+                'quantity': 1,
+            }]
+        )
+        # Return the session URL to the frontend
+        return jsonify({'url': checkout_session.url})
+    except Exception as e:
+        return jsonify(error=str(e)), 403
 
 # --- Billing Webhook Route ---
 @app.route('/api/billing', methods=['POST'])
