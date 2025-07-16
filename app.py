@@ -243,7 +243,9 @@ csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fon
 CORS(app, origins=ALLOWED_CORS_ORIGINS, supports_credentials=True)
 if os.getenv('FLASK_DEBUG') != '1':
     logging.info("--- RUNNING IN PRODUCTION MODE: Applying Talisman ---")
-    csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 'connect-src': ['\'self\'', os.getenv("RENDER_EXTERNAL_URL"), os.getenv("FRONTEND_BASE_URL")], }
+    csp = { 'default-src': ['\'self\'', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'], 
+           'connect-src': ['\'self\'', os.getenv("RENDER_EXTERNAL_URL"), os.getenv("FRONTEND_BASE_URL"), 'https://static.cloudflareinsights.com'],
+           'script-src': ['\'self\'', 'https://www.googletagmanager.com', 'https://static.cloudflareinsights.com'],}
     Talisman(
         app,
         content_security_policy=csp,
