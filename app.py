@@ -381,7 +381,8 @@ def generate_content(prompt_name):
     temp = float(os.getenv('TB_temp', '0.5'))
     max_tokens = 1200
     system_instruction = prompts[prompt_name]
-    
+    logging.info(f"Generate endpoint received contents: {contents[:100]!r}")
+
     final_contents = system_instruction.replace("[FEATURES_PLACEHOLDER]", contents)
 
     result = generate_text_with_gemini(
@@ -390,6 +391,7 @@ def generate_content(prompt_name):
         system_instruction=system_instruction,
         contents=contents
     )
+    logging.info(f"Gemini API returned: {result[:100]!r}")
 
     if result.startswith("Error:"):
         return jsonify({"error": result}), 400
