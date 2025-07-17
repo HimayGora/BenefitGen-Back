@@ -397,8 +397,10 @@ def generate_content(prompt_name):
     current_user.daily_generations += 1
     current_user.monthly_generations += 1
     current_user.save()
+    result= jsonify({"generatedText": result})
+    logging.info(f"result generated for user {current_user.email} using prompt '{prompt_name}'")
+    return result, 200
 
-    return jsonify({"generatedText": result}), 200
 
 # --- Stripe Checkout Session Route ---
 @app.route('/api/create-checkout-session', methods=['POST'])
