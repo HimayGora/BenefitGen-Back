@@ -400,8 +400,8 @@ def generate_content(prompt_name):
     current_user.monthly_generations += 1
     current_user.save()
     res= jsonify({"generatedText": result})
-    logging.info(f"result generated for user {current_user.email} using prompt '{prompt_name}: {result[:30]!r}'")
-    return res, 200
+    logging.info(f"Result for {current_user.email} | Prompt: {prompt_name} | Snippet: {result.strip()[:80]!r}")
+    return jsonify({"generatedText": result}), 200
 
 
 # --- Stripe Checkout Session Route ---
