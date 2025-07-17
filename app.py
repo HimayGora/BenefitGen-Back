@@ -398,7 +398,7 @@ def generate_content(prompt_name):
     current_user.monthly_generations += 1
     current_user.save()
     res= jsonify({"generatedText": result})
-    logging.info(f"result generated for user {current_user.email} using prompt '{prompt_name}: {result[:10]!r}'")
+    logging.info(f"result generated for user {current_user.email} using prompt '{prompt_name}: {result[:30]!r}'")
     return res, 200
 
 
