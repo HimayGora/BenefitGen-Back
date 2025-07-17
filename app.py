@@ -169,7 +169,6 @@ PII_PATTERNS = {
     'phone': re.compile(r'\+?\d[\d\s().-]{7,}'),
     'credit_card': re.compile(r'\b(?:\d[ -]*?){13,16}\b'),
     'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  # US Social Security Number format
-    'address': re.compile(r'\d{1,5}\s[\w\s]{3,}'),
     'zip': re.compile(r'\b\d{5}(-\d{4})?\b')
 }
 
