@@ -62,6 +62,7 @@ app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "a_very_secret_key_that_shoul
 stripe.api_key = os.getenv("STRIPE_API_KEY")
 webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+
 db = MongoEngine(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -162,6 +163,22 @@ def is_valid_input(user_input):
         pass
 
     return True
+
+PII_PATTERNS = {
+    'email': re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'),
+    'phone': re.compile(r'\+?\d[\d\s().-]{7,}'),
+    'credit_card': re.compile(r'\b(?:\d[ -]*?){13,16}\b'),
+    'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  # US Social Security Number format
+    'address': re.compile(r'\d{1,5}\s[\w\s]{3,}'),
+    'zip': re.compile(r'\b\d{5}(-\d{4})?\b')
+}
+
+def detect_hard_pii(text: str):
+    for label, pattern in PII_PATTERNS.items():
+        if pattern.search(text):
+            return True, label
+    return False, None
+
 
 def generate_text_with_gemini(temp, max_output_tokens, system_instruction, contents):
     ## Error Code Meaning: 1(Invalid Temperature), 2(Invalid Max Output Tokens), 3(Invalid System Instruction), 4(Invalid Contents), 5(Invalid Input Detected)
@@ -323,10 +340,20 @@ def get_login_status():
 def generate_content(prompt_name):
     data = request.get_json()
     contents = data.get('contents')
-    prompt_name = prompt_name.lower()
+    data = request.get_json()
+    contents = data.get('contents')
 
     if not contents:
         return jsonify({"error": "Field 'contents' is required."}), 400
+
+    # --- PII Scan ---
+    pii_found, pii_type = detect_hard_pii(contents)
+    if pii_found:
+        return jsonify({
+            "error": "pii_detected",
+            "message": f"Potential personal information ({pii_type}) detected in your submission. Please remove it and try again",
+        }), 422
+
 
     if prompt_name not in prompts:
         return jsonify({"error": f"Prompt '{prompt_name}' not found."}), 404
