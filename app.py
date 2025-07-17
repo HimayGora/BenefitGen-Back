@@ -67,6 +67,16 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+login_manager.login_view = None 
+login_manager.login_message = None
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    """
+    This function is called when a user tries to access a protected resource
+    without being authenticated. It returns a 401 error in JSON format.
+    """
+    return jsonify(status="error", message="Authentication required"), 401
 
 PLAN_DETAILS = {
     'prod_SggQsgqkHOCPi3': { # Replace with your Pro Plan Price ID from Stripe
