@@ -348,11 +348,12 @@ def generate_content(prompt_name):
     # --- PII Scan ---
     pii_found, pii_type = detect_hard_pii(contents)
     if pii_found:
+        logging.error(f"User {current_user.email} flagged the PII check.")
         return jsonify({
             "error": "pii_detected",
             "message": f"Potential personal information ({pii_type}) detected in your submission. Please remove it and try again",
         }), 422
-
+        
 
     if prompt_name not in prompts:
         return jsonify({"error": f"Prompt '{prompt_name}' not found."}), 404
