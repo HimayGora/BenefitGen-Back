@@ -166,18 +166,55 @@ def is_valid_input(user_input):
 
 PII_PATTERNS = {
     'email': re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'),
-    'phone': re.compile(r'\+?\d[\d\s().-]{7,}'),
+    'phone': re.compile(r'(\+1[-.\s]?|1[-.\s]?|)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'),
+    'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
     'credit_card': re.compile(r'\b(?:\d[ -]*?){13,16}\b'),
-    'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  # US Social Security Number format
-    'zip': re.compile(r'\b\d{5}(-\d{4})?\b')
+    'drivers_license': re.compile(r'\b[A-Z0-9]{1,2}\d{4,8}\b'),
+    'passport': re.compile(r'\b[0-9]{9}\b'),
+    'zip_code': re.compile(r'\b\d{5}(?:-\d{4})?\b'),
+    'ipv4': re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
+    'mac_address': re.compile(r'\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b'),
 }
 
-def detect_hard_pii(text: str):
-    for label, pattern in PII_PATTERNS.items():
-        if pattern.search(text):
-            return True, label
-    return False, None
+# Whitelist phrases common in tech docs that should not trigger PII detection
+WHITELIST_PHRASES = [
+    "memory address",
+    "ip address",
+    "server address",
+    "address space",
+    "addressing mode",
+    "build number",
+    "version number",
+    "port number",
+    "serial number",
+    "process id",
+    "thread id",
+    "mac address",
+    "example@example.com",
+    "test@example.com",
+    "localhost",
+    "127.0.0.1",
+]
 
+def is_whitelisted(text, whitelist):
+    """Check if text contains any whitelisted phrase (case-insensitive)."""
+    lower_text = text.lower()
+    return any(phrase in lower_text for phrase in whitelist)
+
+def detect_hard_pii(text):
+    """
+    Detect if the input text contains hard PII, ignoring whitelisted phrases.
+    Returns (bool, pii_type) tuple.
+    """
+    if is_whitelisted(text, WHITELIST_PHRASES):
+        # Whitelisted phrase present, skip PII flagging
+        return False, None
+
+    for pii_type, pattern in PII_PATTERNS.items():
+        if pattern.search(text):
+            return True, pii_type
+
+    return False, None
 
 def generate_text_with_gemini(temp, max_output_tokens, system_instruction, contents):
     ## Error Code Meaning: 1(Invalid Temperature), 2(Invalid Max Output Tokens), 3(Invalid System Instruction), 4(Invalid Contents), 5(Invalid Input Detected)
