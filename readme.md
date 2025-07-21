@@ -1,3 +1,23 @@
+# BenefitGen
+
+© 2025 HSGCraft — All Rights Reserved.
+
+---
+
+**Important Notice:**  
+This software and its documentation are proprietary and confidential.  
+
+Permission to use, copy, modify, or distribute any part of this project or its documentation is **strictly prohibited** without prior **written authorization** from HSGCraft.  
+
+Unauthorized use or distribution may result in legal action.
+
+---
+
+BenefitGen is a commercial product developed and maintained by HSGCraft. For licensing inquiries or permissions, please contact hsg@hsgcraft.com.
+-------------------------------------------------------------------------------------------------------
+
+
+
 **Production API for AI-Powered Content Generation**
 
 **Overview**
