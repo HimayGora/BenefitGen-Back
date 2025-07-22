@@ -337,6 +337,7 @@ def login():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
+    logging.info(f"Login attempt for user: {email}")
     if not email or not password:
         return jsonify({"status": "error", "message": "Email and password are required."}), 400
     user = User.objects(email=email).first()
