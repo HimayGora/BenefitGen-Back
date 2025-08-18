@@ -1,5 +1,8 @@
 # BenefitGen
 
+🚀 **Live Application:** [https://www.hsgcraft.com/](https://www.hsgcraft.com/)
+🔗 **Frontend Repository:** [https://github.com/HimayGora/BenefitGen-Front](https://github.com/HimayGora/BenefitGen-Front)
+
 © 2025 HSGCraft — All Rights Reserved.
 
 ---

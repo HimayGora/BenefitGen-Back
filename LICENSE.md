@@ -1,7 +1,7 @@
-Copyright (c) 2025 HSGCraft
+Proprietary License
 
-All Rights Reserved.
+Copyright (c) 2025 HSGCraft. All rights reserved.
 
-Permission to use, copy, modify, and distribute this software and its
-documentation for any purpose and without fee is hereby prohibited, 
-without prior written permission from HSGCraft.
+This software is the confidential and proprietary information of HSGCraft.
+You shall not disclose such information and shall use it only in accordance 
+with the terms of the license agreement you entered into with HSGCraft.
