@@ -224,8 +224,7 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
     if not system_instruction or not isinstance(system_instruction, str): return "Error: Code 3."
     if not contents or not isinstance(contents, str): return "Error: Code 4."
     if not is_valid_input(contents): return "Error: Code 5."
-    system_instruction = """You are a product marketer with 40 years of experience. You specialize in translating technical features into strategic business benefits. 
-    CRITICAL: Return ONLY valid JSON. Do not include conversational text, introductions, or explanations. Start immediately with the JSON array.Format: JSON array with objects containing 'benefit' and 'supporting_sentence' keys."""
+    
     try:
         model = genai.GenerativeModel(
             model_name="gemini-2.0-flash",
