@@ -224,7 +224,7 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
     if not system_instruction or not isinstance(system_instruction, str): return "Error: Code 3."
     if not contents or not isinstance(contents, str): return "Error: Code 4."
     if not is_valid_input(contents): return "Error: Code 5."
-
+    system_instruction = "You are a product marketer with 40 years of experience. You specialize in translating deeply technical features into clear, strategic value""
     try:
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
