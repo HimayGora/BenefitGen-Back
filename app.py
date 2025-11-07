@@ -15,6 +15,7 @@ import stripe
 import base64
 import binascii
 from functools import wraps
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import logging # NEW: Import the logging library
 
 # --- Configuration & Setup ---
@@ -227,7 +228,13 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
     try:
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
+            safety_settings={
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    }
         )
         generation_config = types.GenerationConfig(
             temperature=temp,
