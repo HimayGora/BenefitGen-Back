@@ -252,7 +252,9 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
         candidate = response.candidates[0]
         if candidate.finish_reason == 2:  # SAFETY
             logging.warning(f"Content blocked by safety filters. Safety ratings: {candidate.safety_ratings}")
+            logging.warning(f"Content: {response.text}")
             return "Error: Content was blocked by safety filters. Please rephrase your input."
+            
         elif candidate.finish_reason != 1:  # Not STOP (normal completion)
             logging.warning(f"Unexpected finish reason: {candidate.finish_reason}")
             return f"Error: Generation ended unexpectedly (reason: {candidate.finish_reason})"
