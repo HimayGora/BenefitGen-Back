@@ -244,6 +244,19 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
             contents=contents,
             generation_config=generation_config
         )
+        # Add after the generate_content call:
+        if not response.candidates:
+            logging.warning("Gemini API: No candidates returned")
+            return "Error: No response generated. The content may have been filtered."
+
+        candidate = response.candidates[0]
+        if candidate.finish_reason == 2:  # SAFETY
+            logging.warning(f"Content blocked by safety filters. Safety ratings: {candidate.safety_ratings}")
+            return "Error: Content was blocked by safety filters. Please rephrase your input."
+        elif candidate.finish_reason != 1:  # Not STOP (normal completion)
+            logging.warning(f"Unexpected finish reason: {candidate.finish_reason}")
+            return f"Error: Generation ended unexpectedly (reason: {candidate.finish_reason})"
+
         return response.text
     except google.api_core.exceptions.InvalidArgument as e:
         logging.error(f"Gemini API InvalidArgument Error: {e}")
