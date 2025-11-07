@@ -228,7 +228,7 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
     CRITICAL: Return ONLY valid JSON. Do not include conversational text, introductions, or explanations. Start immediately with the JSON array.Format: JSON array with objects containing 'benefit' and 'supporting_sentence' keys."""
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.0-flash",
             system_instruction=system_instruction,
             safety_settings={
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
