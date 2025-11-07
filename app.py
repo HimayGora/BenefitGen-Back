@@ -403,6 +403,7 @@ def generate_content(prompt_name):
     if not contents:
         return jsonify({"error": "Field 'contents' is required."}), 400
 
+    contents = re.sub(r'<(\d+)', r'< \1', contents)
     # --- PII Scan ---
     pii_found, pii_type = detect_hard_pii(contents)
     if pii_found:
