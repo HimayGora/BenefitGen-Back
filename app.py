@@ -450,7 +450,7 @@ def generate_content(prompt_name):
         system_instruction=system_instruction,
         contents=contents
     )
-    logging.info(f"Gemini API returned: {result[:100]!r}")
+    logging.info(f"Gemini API returned: {result}")
 
     if result.startswith("Error:"):
         return jsonify({"error": result}), 400
