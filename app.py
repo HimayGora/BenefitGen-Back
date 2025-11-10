@@ -227,7 +227,7 @@ def generate_text_with_gemini(temp, max_output_tokens, system_instruction, conte
     
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.0-flash-lite",
             system_instruction=system_instruction,
             safety_settings={
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
